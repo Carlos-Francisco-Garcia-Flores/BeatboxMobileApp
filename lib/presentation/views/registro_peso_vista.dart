@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/colors_app.dart';
 import '../../core/constants/routes.dart';
 import '../widgets/header_app.dart';
 import '../widgets/barra_navegacion_inferior.dart';
 import '../widgets/boton_primario.dart';
+import '../../presentation/viewmodels/auth_viewmodel.dart';
+import '../../data/datasources/remote/perfil_api_service.dart';
+import '../../data/repositories/perfil_repository_impl.dart';
+import '../../presentation/viewmodels/perfil_viewmodel.dart';
 
 /// Vista para registrar el peso actual del usuario
 class RegistroPesoVista extends StatefulWidget {
@@ -17,12 +22,73 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
   final _pesoController = TextEditingController(text: '75.5');
   bool _cargando = false;
 
+  late PerfilViewModel _perfilViewModel;
+  bool _isLoading = true;
+  
+  String genero = '';
+  double altura = 0.0;
+  double pesoInicial = 0.0;
+  double pesoObjetivo = 0.0;
+  int edad = 0;
+  double imc = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarPerfilUsuario();
+  }
+
+  Future<void> _cargarPerfilUsuario() async {
+    final auth = context.read<AuthViewModel>();
+    if (auth.user == null) {
+      debugPrint('⚠️ Usuario no logueado');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      return;
+    }
+
+    const baseUrl = 'http://10.0.2.2:3000';
+    final api = PerfilApiService(baseUrl: baseUrl, token: auth.user!.token!);
+    final repo = PerfilRepositoryImpl(api);
+    _perfilViewModel = PerfilViewModel(repo);
+
+    await _perfilViewModel.cargarPerfil(auth.user!.id);
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        if (_perfilViewModel.perfil != null) {
+          final perfil = _perfilViewModel.perfil!;
+          
+          genero = perfil.genero;
+          altura = perfil.altura?.toDouble() ?? 0.0;
+          pesoInicial = perfil.pesoInicial?.toDouble() ?? 0.0;
+          pesoObjetivo = perfil.pesoObjetivo?.toDouble() ?? 0.0;
+          imc = perfil.imc?.toDouble() ?? 0.0;
+          
+          if (perfil.fechaNacimiento != null) {
+            final hoy = DateTime.now();
+            edad = hoy.year - perfil.fechaNacimiento!.year;
+
+            if (hoy.month < perfil.fechaNacimiento!.month ||
+                (hoy.month == perfil.fechaNacimiento!.month &&
+                    hoy.day < perfil.fechaNacimiento!.day)) {
+              edad--;
+            }
+          } else {
+            edad = 0;
+          }
+        }
+      });
+    }
+  }
+
   Future<void> _guardarPeso() async {
     setState(() {
       _cargando = true;
     });
 
-    // Simular guardado
     await Future.delayed(const Duration(seconds: 1));
 
     if (mounted) {
@@ -58,33 +124,39 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
             const HeaderApp(),
             
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildNuevoRegistroCard(),
-                    const SizedBox(height: 16),
-                    _buildPesoActualSection(theme),
-                    const SizedBox(height: 16),
-                    BotonPrimario(
-                      texto: 'Guardar Peso Actual',
-                      icono: Icons.save_outlined,
-                      alPresionar: _guardarPeso,
-                      cargando: _cargando,
+              child: _isLoading
+                  ? Center(
+                      child: CircularProgressIndicator(
+                        color: ColoresApp.naranja,
+                      ),
+                    )
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildNuevoRegistroCard(),
+                          const SizedBox(height: 16),
+                          _buildPesoActualSection(theme),
+                          const SizedBox(height: 16),
+                          BotonPrimario(
+                            texto: 'Guardar Peso Actual',
+                            icono: Icons.save_outlined,
+                            alPresionar: _guardarPeso,
+                            cargando: _cargando,
+                          ),
+                          const SizedBox(height: 24),
+                          _buildUltimaActualizacionSection(theme),
+                          const SizedBox(height: 24),
+                          _buildUltimoPesoSection(theme),
+                          const SizedBox(height: 24),
+                          _buildDatosActualesSection(theme),
+                          const SizedBox(height: 16),
+                          _buildTipInformativo(theme),
+                          const SizedBox(height: 80),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 24),
-                    _buildUltimaActualizacionSection(theme),
-                    const SizedBox(height: 24),
-                    _buildUltimoPesoSection(theme),
-                    const SizedBox(height: 24),
-                    _buildDatosActualesSection(theme),
-                    const SizedBox(height: 16),
-                    _buildTipInformativo(theme),
-                    const SizedBox(height: 80),
-                  ],
-                ),
-              ),
             ),
           ],
         ),
@@ -360,11 +432,21 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
               Row(
                 children: [
                   Expanded(
-                    child: _buildDatoItem('78.0 kg', 'Peso Inicial', false, theme),
+                    child: _buildDatoItem(
+                      pesoInicial > 0 ? '${pesoInicial.toStringAsFixed(1)} kg' : '-',
+                      'Peso Inicial',
+                      false,
+                      theme,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _buildDatoItem('175 cm', 'Altura', false, theme),
+                    child: _buildDatoItem(
+                      altura > 0 ? '${altura.toStringAsFixed(0)} cm' : '-',
+                      'Altura',
+                      false,
+                      theme,
+                    ),
                   ),
                 ],
               ),
@@ -372,16 +454,67 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
               Row(
                 children: [
                   Expanded(
-                    child: _buildDatoItem('70 kg', 'Peso Objetivo', true, theme),
+                    child: _buildDatoItem(
+                      pesoObjetivo > 0 ? '${pesoObjetivo.toStringAsFixed(0)} kg' : '-',
+                      'Peso Objetivo',
+                      true,
+                      theme,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _buildDatoItem('28 años', 'Edad', false, theme),
+                    child: _buildDatoItem(
+                      edad > 0 ? '$edad años' : '-',
+                      'Edad',
+                      false,
+                      theme,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              _buildDatoItem('Masculino', 'Género • IMC 25.5', false, theme),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: theme.brightness == Brightness.dark
+                      ? Colors.white.withOpacity(0.05)
+                      : const Color(0xFFF8F9FA),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: theme.brightness == Brightness.dark
+                        ? Colors.white.withOpacity(0.1)
+                        : Colors.grey.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      genero.isNotEmpty 
+                          ? genero.substring(0, 1).toUpperCase() + genero.substring(1).toLowerCase()
+                          : '-',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: theme.textTheme.bodyLarge?.color,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (imc > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'IMC ${imc.toStringAsFixed(1)}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: theme.textTheme.bodyMedium?.color,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
         ),

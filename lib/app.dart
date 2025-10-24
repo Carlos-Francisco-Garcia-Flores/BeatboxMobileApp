@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'core/theme/theme_app.dart';
 import 'core/constants/routes.dart';
 import 'core/proveedores/theme_provider.dart';
+
+// Importa las vistas
 import 'presentation/views/bienvenida_vista.dart';
 import 'presentation/views/inicio_sesion_vista.dart';
 import 'presentation/views/recuperar_contrasena_vista.dart';
@@ -10,17 +12,17 @@ import 'presentation/views/home_vista.dart';
 import 'presentation/views/registro_peso_vista.dart';
 import 'presentation/views/historial_vista.dart';
 import 'presentation/views/progreso_vista.dart';
-import 'presentation/views/perfil_vista.dart';
+import 'presentation/views/perfil_vista.dart'; // ✅ Mantén este import
 
 /// Widget principal de la aplicación
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
-  State<MyApp> createState() => _DogotboxAppState();
+  State<MyApp> createState() => _MyAppState();
 }
 
-class _DogotboxAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> {
   final ProveedorTema _proveedorTema = ProveedorTema();
 
   @override
@@ -58,6 +60,7 @@ class _DogotboxAppState extends State<MyApp> {
         Rutas.registroPeso: (context) => const RegistroPesoVista(),
         Rutas.historial: (context) => const HistorialVista(),
         Rutas.progreso: (context) => const ProgresoVista(),
+        // ✅ Aquí conectamos PerfilVista correctamente
         Rutas.perfil: (context) => PerfilVista(proveedorTema: _proveedorTema),
       },
       
@@ -73,7 +76,7 @@ class _DogotboxAppState extends State<MyApp> {
       
       // Manejo de rutas no encontradas
       onUnknownRoute: (settings) {
-        debugPrint('[v0] Ruta no encontrada: ${settings.name}');
+        debugPrint('[⚠️] Ruta no encontrada: ${settings.name}');
         return MaterialPageRoute(
           builder: (context) => const BienvenidaVista(),
         );

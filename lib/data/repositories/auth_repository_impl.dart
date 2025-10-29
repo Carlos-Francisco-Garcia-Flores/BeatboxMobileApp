@@ -13,7 +13,7 @@ class AuthRepositoryImpl implements AuthRepository {
     final data = await apiService.login(usuario, password);
 
     if (data['success'] == true && data['usuario'] != null) {
-      return UserModel.fromJson(data['usuario']);
+    return UserModel.fromJson(data); // 👈 pasa todo el JSON
     } else {
       throw Exception(data['message'] ?? 'Error de autenticación');
     }

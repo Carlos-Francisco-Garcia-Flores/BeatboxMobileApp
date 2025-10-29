@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/colors_app.dart';
 import '../../core/constants/routes.dart';
 import '../widgets/header_app.dart';
 import '../widgets/barra_navegacion_inferior.dart';
 import '../widgets/boton_primario.dart';
+import '../viewmodels/auth_viewmodel.dart';
+import '../viewmodels/perfil_viewmodel.dart';
+import '../viewmodels/peso_viewmodel.dart';
 
 /// Vista para registrar el peso actual del usuario
+/// Combina la lógica de guardado con el diseño mejorado
 class RegistroPesoVista extends StatefulWidget {
   const RegistroPesoVista({super.key});
 
@@ -14,27 +19,136 @@ class RegistroPesoVista extends StatefulWidget {
 }
 
 class _RegistroPesoVistaState extends State<RegistroPesoVista> {
-  final _pesoController = TextEditingController(text: '75.5');
-  bool _cargando = false;
+  final _pesoController = TextEditingController();
+  bool _isLoading = true;
+  
+  String genero = '';
+  double altura = 0.0;
+  double pesoInicial = 0.0;
+  double pesoObjetivo = 0.0;
+  int edad = 0;
+  double imc = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final authVM = context.read<AuthViewModel>();
+      final perfilVM = context.read<PerfilViewModel>();
+
+      if (authVM.user != null && perfilVM.perfil == null) {
+        await perfilVM.cargarPerfil(authVM.user!.id);
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          if (perfilVM.perfil != null) {
+            final perfil = perfilVM.perfil!;
+            
+            genero = perfil.genero;
+            altura = perfil.altura?.toDouble() ?? 0.0;
+            pesoInicial = perfil.pesoInicial?.toDouble() ?? 0.0;
+            pesoObjetivo = perfil.pesoObjetivo?.toDouble() ?? 0.0;
+            imc = perfil.imc?.toDouble() ?? 0.0;
+            
+            // Calcular edad desde fecha de nacimiento
+            if (perfil.fechaNacimiento != null) {
+              final hoy = DateTime.now();
+              edad = hoy.year - perfil.fechaNacimiento!.year;
+
+              if (hoy.month < perfil.fechaNacimiento!.month ||
+                  (hoy.month == perfil.fechaNacimiento!.month &&
+                      hoy.day < perfil.fechaNacimiento!.day)) {
+                edad--;
+              }
+            }
+          }
+        });
+      }
+    });
+  }
 
   Future<void> _guardarPeso() async {
-    setState(() {
-      _cargando = true;
-    });
+    final pesoVM = context.read<PesoViewModel>();
+    final authVM = context.read<AuthViewModel>();
+    final perfilVM = context.read<PerfilViewModel>();
 
-    // Simular guardado
-    await Future.delayed(const Duration(seconds: 1));
+    final peso = double.tryParse(_pesoController.text);
 
-    if (mounted) {
-      setState(() {
-        _cargando = false;
-      });
-
+    if (peso == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('¡Peso registrado exitosamente!'),
-          backgroundColor: Colors.black87,
+          content: Text('⚠️ Ingrese un peso válido'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (authVM.user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Debes iniciar sesión primero'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (perfilVM.perfil == null) {
+      await perfilVM.cargarPerfil(authVM.user!.id);
+      if (perfilVM.perfil == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '⚠️ No se ha cargado tu perfil aún. Intenta nuevamente.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Obtener los datos del perfil
+    final perfil = perfilVM.perfil!;
+    final perfilId = perfil.id;
+    final pesoInicialPerfil = perfil.pesoInicial ?? 0.0;
+    final pesoObjetivoPerfil = perfil.pesoObjetivo ?? 0.0;
+    final alturaPerfil = perfil.altura?.toDouble() ?? 0.0;
+
+    debugPrint("📊 Guardando peso con datos:");
+    debugPrint(
+        "peso=$peso, pesoInicial=$pesoInicialPerfil, pesoObjetivo=$pesoObjetivoPerfil, altura=$alturaPerfil");
+
+    // Llamar al ViewModel para guardar en el backend
+    await pesoVM.registrarPeso(
+      peso,
+      perfilId,
+      pesoInicial: pesoInicialPerfil,
+      pesoObjetivo: pesoObjetivoPerfil,
+      altura: alturaPerfil,
+    );
+
+    if (pesoVM.error == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Peso registrado correctamente'),
+          backgroundColor: Colors.green,
           duration: Duration(seconds: 2),
+        ),
+      );
+      _pesoController.clear();
+      
+      // Actualizar la UI para mostrar el nuevo registro
+      setState(() {});
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ ${pesoVM.error!}'),
+          backgroundColor: Colors.red,
         ),
       );
     }
@@ -49,6 +163,7 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final pesoVM = context.watch<PesoViewModel>();
     
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -58,33 +173,46 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
             const HeaderApp(),
             
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildNuevoRegistroCard(),
-                    const SizedBox(height: 16),
-                    _buildPesoActualSection(theme),
-                    const SizedBox(height: 16),
-                    BotonPrimario(
-                      texto: 'Guardar Peso Actual',
-                      icono: Icons.save_outlined,
-                      alPresionar: _guardarPeso,
-                      cargando: _cargando,
+              child: _isLoading
+                  ? Center(
+                      child: CircularProgressIndicator(
+                        color: ColoresApp.naranja,
+                      ),
+                    )
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildNuevoRegistroCard(),
+                          const SizedBox(height: 16),
+                          _buildPesoActualSection(theme, pesoVM),
+                          const SizedBox(height: 16),
+                          BotonPrimario(
+                            texto: 'Guardar Peso Actual',
+                            icono: Icons.save_outlined,
+                            alPresionar: _guardarPeso,
+                            cargando: pesoVM.isLoading,
+                          ),
+                          const SizedBox(height: 24),
+                          
+                          if (pesoVM.ultimoRegistro != null) ...[
+                            _buildUltimaActualizacionSection(theme, pesoVM),
+                            const SizedBox(height: 24),
+                          ],
+                          
+                          if (pesoVM.ultimoRegistro != null) ...[
+                            _buildUltimoPesoSection(theme, pesoVM),
+                            const SizedBox(height: 24),
+                          ],
+                          
+                          _buildDatosActualesSection(theme),
+                          const SizedBox(height: 16),
+                          _buildTipInformativo(theme),
+                          const SizedBox(height: 80),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 24),
-                    _buildUltimaActualizacionSection(theme),
-                    const SizedBox(height: 24),
-                    _buildUltimoPesoSection(theme),
-                    const SizedBox(height: 24),
-                    _buildDatosActualesSection(theme),
-                    const SizedBox(height: 16),
-                    _buildTipInformativo(theme),
-                    const SizedBox(height: 80),
-                  ],
-                ),
-              ),
             ),
           ],
         ),
@@ -145,7 +273,7 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
     );
   }
 
-  Widget _buildPesoActualSection(ThemeData theme) {
+  Widget _buildPesoActualSection(ThemeData theme, PesoViewModel pesoVM) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -197,6 +325,10 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
                 borderSide: BorderSide.none,
               ),
               contentPadding: const EdgeInsets.symmetric(vertical: 16),
+              hintText: 'Ej: 75.5',
+              hintStyle: TextStyle(
+                color: theme.textTheme.bodyMedium?.color?.withOpacity(0.5),
+              ),
             ),
           ),
         ],
@@ -204,7 +336,26 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
     );
   }
 
-  Widget _buildUltimaActualizacionSection(ThemeData theme) {
+  Widget _buildUltimaActualizacionSection(ThemeData theme, PesoViewModel pesoVM) {
+    final ultimoRegistro = pesoVM.ultimoRegistro!;
+    final fecha = ultimoRegistro.fecha;
+    final fechaFormateada = '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}, ${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}';
+    
+    // Calcular tiempo transcurrido
+    final ahora = DateTime.now();
+    final diferencia = ahora.difference(fecha);
+    String tiempoTranscurrido;
+    
+    if (diferencia.inMinutes < 1) {
+      tiempoTranscurrido = 'Hace menos de 1 minuto';
+    } else if (diferencia.inMinutes < 60) {
+      tiempoTranscurrido = 'Hace ${diferencia.inMinutes} minuto${diferencia.inMinutes > 1 ? 's' : ''}';
+    } else if (diferencia.inHours < 24) {
+      tiempoTranscurrido = 'Hace ${diferencia.inHours} hora${diferencia.inHours > 1 ? 's' : ''}';
+    } else {
+      tiempoTranscurrido = 'Hace ${diferencia.inDays} día${diferencia.inDays > 1 ? 's' : ''}';
+    }
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -235,25 +386,25 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '70.32 kg',
-                      style: TextStyle(
+                    Text(
+                      '${ultimoRegistro.peso} kg',
+                      style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF1976D2),
                       ),
                     ),
                     const SizedBox(height: 4),
-                    const Text(
-                      '23/09/2025, 01:38',
-                      style: TextStyle(
+                    Text(
+                      fechaFormateada,
+                      style: const TextStyle(
                         fontSize: 13,
                         color: Color(0xFF666666),
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Hace 0 minutos',
+                      tiempoTranscurrido,
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey[600],
@@ -272,7 +423,11 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
     );
   }
 
-  Widget _buildUltimoPesoSection(ThemeData theme) {
+  Widget _buildUltimoPesoSection(ThemeData theme, PesoViewModel pesoVM) {
+    final ultimoRegistro = pesoVM.ultimoRegistro!;
+    final fecha = ultimoRegistro.fecha;
+    final fechaFormateada = '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}';
+    
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -295,19 +450,41 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  '70.32 kg',
-                  style: TextStyle(
+                Text(
+                  '${ultimoRegistro.peso} kg',
+                  style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
                     color: ColoresApp.naranja,
                   ),
                 ),
                 Text(
-                  '23/09/2025',
+                  fechaFormateada,
                   style: TextStyle(
                     fontSize: 12,
                     color: theme.textTheme.bodySmall?.color,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'IMC: ${ultimoRegistro.imc.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.textTheme.bodyMedium?.color,
+                  ),
+                ),
+                Text(
+                  'Peso perdido: ${ultimoRegistro.pesoPerdido.toStringAsFixed(1)} kg',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.textTheme.bodyMedium?.color,
+                  ),
+                ),
+                Text(
+                  'Proyección: ${ultimoRegistro.proyeccion} meses',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.textTheme.bodyMedium?.color,
                   ),
                 ),
               ],
@@ -360,11 +537,21 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
               Row(
                 children: [
                   Expanded(
-                    child: _buildDatoItem('78.0 kg', 'Peso Inicial', false, theme),
+                    child: _buildDatoItem(
+                      pesoInicial > 0 ? '${pesoInicial.toStringAsFixed(1)} kg' : '-',
+                      'Peso Inicial',
+                      false,
+                      theme,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _buildDatoItem('175 cm', 'Altura', false, theme),
+                    child: _buildDatoItem(
+                      altura > 0 ? '${altura.toStringAsFixed(0)} cm' : '-',
+                      'Altura',
+                      false,
+                      theme,
+                    ),
                   ),
                 ],
               ),
@@ -372,16 +559,67 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
               Row(
                 children: [
                   Expanded(
-                    child: _buildDatoItem('70 kg', 'Peso Objetivo', true, theme),
+                    child: _buildDatoItem(
+                      pesoObjetivo > 0 ? '${pesoObjetivo.toStringAsFixed(0)} kg' : '-',
+                      'Peso Objetivo',
+                      true,
+                      theme,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _buildDatoItem('28 años', 'Edad', false, theme),
+                    child: _buildDatoItem(
+                      edad > 0 ? '$edad años' : '-',
+                      'Edad',
+                      false,
+                      theme,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              _buildDatoItem('Masculino', 'Género • IMC 25.5', false, theme),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: theme.brightness == Brightness.dark
+                      ? Colors.white.withOpacity(0.05)
+                      : const Color(0xFFF8F9FA),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: theme.brightness == Brightness.dark
+                        ? Colors.white.withOpacity(0.1)
+                        : Colors.grey.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      genero.isNotEmpty 
+                          ? genero.substring(0, 1).toUpperCase() + genero.substring(1).toLowerCase()
+                          : '-',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: theme.textTheme.bodyLarge?.color,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (imc > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'IMC ${imc.toStringAsFixed(1)}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: theme.textTheme.bodyMedium?.color,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
         ),

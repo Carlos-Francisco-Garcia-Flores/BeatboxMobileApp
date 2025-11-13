@@ -21,6 +21,7 @@ class RegistroPesoVista extends StatefulWidget {
 class _RegistroPesoVistaState extends State<RegistroPesoVista> {
   final _pesoController = TextEditingController();
   bool _isLoading = true;
+
   
   String genero = '';
   double altura = 0.0;
@@ -69,6 +70,37 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
       }
     });
   }
+  
+bool _cargado = false;
+
+@override
+void didChangeDependencies() {
+  super.didChangeDependencies();
+
+  // Evitar llamadas repetidas
+  if (_cargado) return;
+  _cargado = true;
+
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    final authVM = context.read<AuthViewModel>();
+    final perfilVM = context.read<PerfilViewModel>();
+    final pesoVM = context.read<PesoViewModel>();
+
+    // 1️⃣ Esperar a que el perfil esté disponible
+    if (authVM.user != null && perfilVM.perfil == null) {
+      await perfilVM.cargarPerfil(authVM.user!.id);
+    }
+
+    // 2️⃣ Cuando ya exista el perfil, cargar el último peso
+    if (perfilVM.perfil != null) {
+      await pesoVM.cargarUltimoPeso(perfilVM.perfil!.id);
+      debugPrint("✅ Último peso cargado correctamente (${pesoVM.ultimoRegistro?.peso})");
+
+      // 3️⃣ Refrescar la interfaz solo si está montada
+      if (mounted) setState(() {});
+    }
+  });
+}
 
   Future<void> _guardarPeso() async {
     final pesoVM = context.read<PesoViewModel>();

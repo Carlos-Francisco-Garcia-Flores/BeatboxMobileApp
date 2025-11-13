@@ -6,16 +6,24 @@ import 'package:provider/provider.dart';
 import 'data/datasources/remote/auth_api_service.dart';
 import 'data/datasources/remote/perfil_api_service.dart';
 import 'data/datasources/remote/peso_api_service.dart';
+import 'data/datasources/remote/historial_api_service.dart'; // ✅ Nuevo
+
 import 'data/repositories/auth_repository_impl.dart';
 import 'data/repositories/perfil_repository_impl.dart';
 import 'data/repositories/peso_repository_impl.dart';
+import 'data/repositories/historial_repository_impl.dart'; // ✅ Nuevo
+
 import 'domain/usecases/login_user.dart';
 import 'domain/usecases/logout_user.dart';
 import 'domain/usecases/validate_session.dart';
 import 'domain/usecases/registrar_peso.dart';
+import 'domain/usecases/obtener_historial.dart'; // ✅ Nuevo
+
 import 'presentation/viewmodels/auth_viewmodel.dart';
 import 'presentation/viewmodels/perfil_viewmodel.dart';
 import 'presentation/viewmodels/peso_viewmodel.dart';
+import 'presentation/viewmodels/historial_viewmodel.dart'; // ✅ Nuevo
+
 import 'app.dart'; // Tu widget principal
 
 void main() async {
@@ -35,14 +43,14 @@ void main() async {
 
   const baseUrl = 'http://10.0.2.2:3000';
 
-  // Servicios base
+  // 🧠 Servicio base de autenticación
   final authApiService = AuthApiService();
   final authRepository = AuthRepositoryImpl(authApiService);
 
   runApp(
     MultiProvider(
       providers: [
-        // --- 🔐 Auth Provider ---
+        // --- 🔐 AUTH ---
         ChangeNotifierProvider(
           create: (_) => AuthViewModel(
             loginUser: LoginUser(authRepository),
@@ -51,7 +59,7 @@ void main() async {
           ),
         ),
 
-        // --- 👤 Perfil Provider (ligado al usuario autenticado) ---
+        // --- 👤 PERFIL (depende del token del usuario autenticado) ---
         ChangeNotifierProxyProvider<AuthViewModel, PerfilViewModel>(
           create: (_) {
             final perfilApi = PerfilApiService(baseUrl: baseUrl, token: '');
@@ -66,7 +74,7 @@ void main() async {
           },
         ),
 
-        // --- ⚖️ Peso Provider (también depende del token del usuario) ---
+        // --- ⚖️ PESO (para registrar nuevos pesos) ---
         ChangeNotifierProxyProvider<AuthViewModel, PesoViewModel>(
           create: (_) {
             final pesoApi = PesoApiService(baseUrl: baseUrl, token: '');
@@ -82,8 +90,25 @@ void main() async {
             return PesoViewModel(usecase);
           },
         ),
+
+        // --- 📊 HISTORIAL (para mostrar todos los registros del usuario) ---
+        ChangeNotifierProxyProvider<AuthViewModel, HistorialViewModel>(
+          create: (_) {
+            final historialApi = HistorialApiService(baseUrl: baseUrl, token: '');
+            final historialRepo = HistorialRepositoryImpl(historialApi);
+            final usecase = ObtenerHistorial(historialRepo);
+            return HistorialViewModel(usecase);
+          },
+          update: (_, auth, __) {
+            final token = auth.user?.token ?? '';
+            final historialApi = HistorialApiService(baseUrl: baseUrl, token: token);
+            final historialRepo = HistorialRepositoryImpl(historialApi);
+            final usecase = ObtenerHistorial(historialRepo);
+            return HistorialViewModel(usecase);
+          },
+        ),
       ],
-      child: const MyApp(), // ✅ Esto ya incluye MaterialApp y rutas
+      child: const MyApp(), // ✅ Tu MaterialApp principal con rutas
     ),
   );
 }

@@ -1,22 +1,39 @@
 import 'package:flutter/material.dart';
-import '../../core/theme/colors_app.dart';
+import 'package:flutter_application_1/core/theme/colors_app.dart';
 
-/// Tarjeta que muestra un registro histórico de peso
 class TarjetaRegistroHistorico extends StatelessWidget {
   final double peso;
+  final double imc;
+  final double pesoPerdido;
+  final double proyeccion;
   final DateTime fecha;
-  final double variacion;
-  final int diasDesdeUltimo;
-  final VoidCallback? onVerDetalles;
 
   const TarjetaRegistroHistorico({
     super.key,
     required this.peso,
+    required this.imc,
+    required this.pesoPerdido,
+    required this.proyeccion,
     required this.fecha,
-    required this.variacion,
-    required this.diasDesdeUltimo,
-    this.onVerDetalles,
   });
+
+  String _formatearFecha(DateTime fecha) {
+    final ahora = DateTime.now();
+    final diferencia = ahora.difference(fecha);
+
+    if (diferencia.inDays == 0) {
+      return 'Hoy';
+    } else if (diferencia.inDays == 1) {
+      return 'Ayer';
+    } else if (diferencia.inDays < 7) {
+      return 'Hace ${diferencia.inDays} días';
+    } else {
+      final dia = fecha.day.toString().padLeft(2, '0');
+      final mes = fecha.month.toString().padLeft(2, '0');
+      final anio = fecha.year;
+      return '$dia/$mes/$anio';
+    }
+  }
 
   String _obtenerNombreDia(int weekday) {
     const dias = [
@@ -49,13 +66,29 @@ class TarjetaRegistroHistorico extends StatelessWidget {
     return meses[month - 1];
   }
 
-  Color _obtenerColorVariacion() {
-    if (variacion > 0) {
-      return ColoresApp.error; // Rojo para aumento
-    } else if (variacion < 0) {
-      return ColoresApp.exito; // Verde para disminución
-    }
-    return ColoresApp.naranja; // Naranja para sin cambio
+  String _getCategoriaIMC(double imc) {
+    if (imc < 18.5) return 'Bajo peso';
+    if (imc < 25) return 'Normal';
+    if (imc < 30) return 'Sobrepeso';
+    return 'Obesidad';
+  }
+
+  Color _getColorIMC(double imc) {
+    if (imc < 18.5) return Colors.blue;
+    if (imc < 25) return Colors.green;
+    if (imc < 30) return Colors.orange;
+    return Colors.red;
+  }
+
+  int _calcularDiasDesdeUltimo() {
+    final ahora = DateTime.now();
+    return ahora.difference(fecha).inDays;
+  }
+
+  Color _obtenerColorVariacion(int dias) {
+    if (dias == 0) return ColoresApp.naranja;
+    if (dias == 1) return ColoresApp.exito;
+    return ColoresApp.error;
   }
 
   @override
@@ -63,7 +96,8 @@ class TarjetaRegistroHistorico extends StatelessWidget {
     final theme = Theme.of(context);
     final nombreDia = _obtenerNombreDia(fecha.weekday);
     final nombreMes = _obtenerNombreMes(fecha.month);
-    final colorVariacion = _obtenerColorVariacion();
+    final diasDesdeUltimo = _calcularDiasDesdeUltimo();
+    final colorVariacion = _obtenerColorVariacion(diasDesdeUltimo);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -81,7 +115,6 @@ class TarjetaRegistroHistorico extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Icono de balanza
           Container(
             width: 40,
             height: 40,
@@ -96,7 +129,6 @@ class TarjetaRegistroHistorico extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          // Información del peso
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -104,7 +136,7 @@ class TarjetaRegistroHistorico extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      '$peso',
+                      '${peso.toStringAsFixed(1)}',
                       style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -133,7 +165,6 @@ class TarjetaRegistroHistorico extends StatelessWidget {
               ],
             ),
           ),
-          // Badge de variación y botón
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -146,7 +177,7 @@ class TarjetaRegistroHistorico extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.access_time,
                       size: 12,
                       color: Colors.white,
@@ -165,8 +196,10 @@ class TarjetaRegistroHistorico extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               GestureDetector(
-                onTap: onVerDetalles,
-                child: Row(
+                onTap: () {
+                  print('Ver detalles de registro: ${peso}kg');
+                },
+                child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
@@ -174,8 +207,8 @@ class TarjetaRegistroHistorico extends StatelessWidget {
                       size: 16,
                       color: ColoresApp.naranja,
                     ),
-                    const SizedBox(width: 4),
-                    const Text(
+                    SizedBox(width: 4),
+                    Text(
                       'Ver detalles',
                       style: TextStyle(
                         fontSize: 12,

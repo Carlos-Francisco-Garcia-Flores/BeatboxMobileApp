@@ -22,7 +22,7 @@ class HeaderApp extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           // 🔹 Logo de la app
-          const LogoApp(width: 100, height: 40),
+          const LogoApp(width: 150, height: 60),
 
           // 🔹 Nombre de usuario dinámico
           Row(

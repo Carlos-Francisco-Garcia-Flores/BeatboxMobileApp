@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/presentation/viewmodels/auth_viewmodel.dart';
+import 'package:flutter_application_1/presentation/viewmodels/perfil_viewmodel.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/colors_app.dart';
 import '../../core/constants/routes.dart';
 import '../widgets/header_app.dart';
@@ -8,69 +11,125 @@ import '../widgets/tarjeta_peso_actual.dart';
 import '../widgets/tarjeta_imc_actual.dart';
 import '../widgets/tarjeta_progreso_total.dart';
 import '../widgets/tarjeta_metrica.dart';
+import '../viewmodels/peso_viewmodel.dart';
 
 /// Vista principal del dashboard con métricas de peso y progreso
-class HomeVista extends StatelessWidget {
+class HomeVista extends StatefulWidget {
   const HomeVista({super.key});
+
+  @override
+  State<HomeVista> createState() => _HomeVistaState();
+}
+
+class _HomeVistaState extends State<HomeVista> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final authVM = Provider.of<AuthViewModel>(context, listen: false);
+      final perfilVM = Provider.of<PerfilViewModel>(context, listen: false);
+      final pesoVM = Provider.of<PesoViewModel>(context, listen: false);
+
+      final userId = authVM.user?.id;
+
+      if (userId != null) {
+        await perfilVM.cargarPerfil(userId);
+        final perfilId = perfilVM.perfil?.id;
+
+        if (perfilId != null) {
+          debugPrint('📡 Solicitando pesos del perfil $perfilId');
+          await pesoVM.cargarUltimoPeso(perfilId);
+          await pesoVM.cargarPesosPorPerfil(
+            perfilId,
+          ); // ✅ importante para las métricas
+        } else {
+          debugPrint('⚠️ No se encontró perfil para el usuario $userId');
+        }
+      } else {
+        debugPrint('⚠️ No hay usuario logueado, no se puede cargar el perfil.');
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final pesoVM = Provider.of<PesoViewModel>(context);
+    final peso = pesoVM.ultimoRegistro;
+
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
-        child: Column(
-          children: [
-            const HeaderApp(),
-            
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const TarjetaNuevoRegistro(),
-                    const SizedBox(height: 16),
-                    _buildIndicadorTiempo(theme),
-                    const SizedBox(height: 16),
-                    
-                    // Tarjeta de peso actual
-                    const TarjetaPesoActual(
-                      pesoActual: 70.32,
-                      pesoMeta: 70,
-                      pesoInicial: 78.62,
+        child: pesoVM.isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  const HeaderApp(),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const TarjetaNuevoRegistro(),
+                          const SizedBox(height: 16),
+                          _buildIndicadorTiempo(theme),
+                          const SizedBox(height: 16),
+
+                          // 🔹 Peso actual (desde ultimoRegistro)
+                          if (peso != null) ...[
+                            TarjetaPesoActual(
+                              pesoActual: peso.peso,
+                              pesoMeta: peso
+                                  .proyeccion, // o meta si la tienes en peso
+                              pesoInicial:
+                                  peso.pesoPerdido +
+                                  peso.peso, // calculo inverso aprox
+                            ),
+                            const SizedBox(height: 16),
+
+                            // 🔹 IMC actual (desde ultimoRegistro)
+                            TarjetaIMCActual(
+                              imc: peso.imc,
+                              categoria: _categoriaIMC(peso.imc),
+                            ),
+                            const SizedBox(height: 16),
+
+                            // 🔹 Progreso total (desde ultimoRegistro)
+                            TarjetaProgresoTotal(
+                              pesoPerdido: peso.pesoPerdido,
+                              porcentaje: peso.proyeccion,
+                            ),
+                          ] else
+                            const Center(
+                              child: Text(
+                                'Aún no tienes registros de peso',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ),
+
+                          const SizedBox(height: 16),
+                          _buildGridMetricas(pesoVM),
+                          const SizedBox(height: 80),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 16),
-                    
-                    // Tarjeta de IMC actual
-                    const TarjetaIMCActual(
-                      imc: 23.0,
-                      categoria: 'Normal',
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // Tarjeta de progreso total
-                    const TarjetaProgresoTotal(
-                      pesoPerdido: 7.7,
-                      porcentaje: 95.0,
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // Grid de métricas adicionales
-                    _buildGridMetricas(),
-                    const SizedBox(height: 80), // Espacio para la barra de navegación
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
       bottomNavigationBar: const BarraNavegacionInferior(
         rutaActual: Rutas.home,
       ),
     );
+  }
+
+  /// Determina la categoría según el valor del IMC
+  String _categoriaIMC(double imc) {
+    if (imc < 18.5) return 'Bajo peso';
+    if (imc < 25) return 'Normal';
+    if (imc < 30) return 'Sobrepeso';
+    return 'Obesidad';
   }
 
   Widget _buildIndicadorTiempo(ThemeData theme) {
@@ -105,10 +164,7 @@ class HomeVista extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 2),
-              Text(
-                'Quedan 30 días',
-                style: theme.textTheme.bodySmall,
-              ),
+              Text('Quedan 30 días', style: theme.textTheme.bodySmall),
             ],
           ),
         ],
@@ -116,7 +172,13 @@ class HomeVista extends StatelessWidget {
     );
   }
 
-  Widget _buildGridMetricas() {
+  Widget _buildGridMetricas(PesoViewModel pesoVM) {
+    final totalRegistros = pesoVM.totalRegistros;
+    final ultimo = pesoVM.ultimoRegistro;
+    final fechaUltimo = pesoVM.fechaUltimo;
+    final proyeccion = ultimo?.proyeccion ?? 0;
+    final promedioSemanal = pesoVM.promedioSemanal;
+
     return GridView.count(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -124,27 +186,27 @@ class HomeVista extends StatelessWidget {
       mainAxisSpacing: 12,
       crossAxisSpacing: 12,
       childAspectRatio: 1.3,
-      children: const [
+      children: [
         TarjetaMetrica(
-          valor: '7',
+          valor: '$totalRegistros',
           etiqueta: 'Registros Totales',
           icono: Icons.scale,
           colorIcono: ColoresApp.naranja,
         ),
         TarjetaMetrica(
-          valor: '2 sem',
+          valor: proyeccion > 0 ? '$proyeccion sem' : '—',
           etiqueta: 'Tiempo Estimado',
           icono: Icons.access_time,
           colorIcono: ColoresApp.naranja,
         ),
         TarjetaMetrica(
-          valor: 'Hoy',
+          valor: fechaUltimo,
           etiqueta: 'Última Vez',
           icono: Icons.calendar_today,
           colorIcono: ColoresApp.naranja,
         ),
         TarjetaMetrica(
-          valor: '53.8',
+          valor: promedioSemanal,
           etiqueta: 'kg/semana',
           icono: Icons.trending_down,
           colorIcono: ColoresApp.exito,

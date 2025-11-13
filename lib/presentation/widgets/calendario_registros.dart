@@ -1,31 +1,19 @@
 import 'package:flutter/material.dart';
-import '../../core/theme/colors_app.dart';
+import 'package:flutter_application_1/core/theme/colors_app.dart';
 
-/// Widget de calendario que muestra los días con registros
-class CalendarioRegistros extends StatefulWidget {
+class CalendarioRegistros extends StatelessWidget {
   final DateTime mesActual;
   final List<DateTime> diasConRegistros;
   final Function(DateTime)? onDiaSeleccionado;
+  final Function(DateTime)? onMesCambiado;
 
   const CalendarioRegistros({
     super.key,
     required this.mesActual,
     required this.diasConRegistros,
     this.onDiaSeleccionado,
+    this.onMesCambiado,
   });
-
-  @override
-  State<CalendarioRegistros> createState() => _CalendarioRegistrosState();
-}
-
-class _CalendarioRegistrosState extends State<CalendarioRegistros> {
-  late DateTime _mesActual;
-
-  @override
-  void initState() {
-    super.initState();
-    _mesActual = widget.mesActual;
-  }
 
   String _obtenerNombreMes(int month) {
     const meses = [
@@ -46,25 +34,24 @@ class _CalendarioRegistrosState extends State<CalendarioRegistros> {
   }
 
   bool _tieneRegistro(DateTime dia) {
-    return widget.diasConRegistros.any((fecha) =>
+    return diasConRegistros.any((fecha) =>
         fecha.year == dia.year &&
         fecha.month == dia.month &&
         fecha.day == dia.day);
   }
 
   void _cambiarMes(int cambio) {
-    setState(() {
-      _mesActual = DateTime(_mesActual.year, _mesActual.month + cambio, 1);
-    });
+    final nuevoMes = DateTime(mesActual.year, mesActual.month + cambio, 1);
+    onMesCambiado?.call(nuevoMes);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final primerDiaMes = DateTime(_mesActual.year, _mesActual.month, 1);
-    final ultimoDiaMes = DateTime(_mesActual.year, _mesActual.month + 1, 0);
+    final primerDiaMes = DateTime(mesActual.year, mesActual.month, 1);
+    final ultimoDiaMes = DateTime(mesActual.year, mesActual.month + 1, 0);
     final diasEnMes = ultimoDiaMes.day;
-    final primerDiaSemana = primerDiaMes.weekday % 7; // 0 = Domingo
+    final primerDiaSemana = primerDiaMes.weekday % 7;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -81,7 +68,6 @@ class _CalendarioRegistrosState extends State<CalendarioRegistros> {
       ),
       child: Column(
         children: [
-          // Header con navegación de mes
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -91,7 +77,7 @@ class _CalendarioRegistrosState extends State<CalendarioRegistros> {
                 color: theme.textTheme.bodyMedium?.color,
               ),
               Text(
-                '${_obtenerNombreMes(_mesActual.month)} ${_mesActual.year}',
+                '${_obtenerNombreMes(mesActual.month)} ${mesActual.year}',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -106,7 +92,6 @@ class _CalendarioRegistrosState extends State<CalendarioRegistros> {
             ],
           ),
           const SizedBox(height: 16),
-          // Días de la semana
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -126,7 +111,6 @@ class _CalendarioRegistrosState extends State<CalendarioRegistros> {
                 .toList(),
           ),
           const SizedBox(height: 8),
-          // Grid de días
           ...List.generate(6, (semana) {
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
@@ -136,13 +120,11 @@ class _CalendarioRegistrosState extends State<CalendarioRegistros> {
                   final numeroDia = semana * 7 + diaSemana - primerDiaSemana + 1;
                   
                   if (numeroDia < 1 || numeroDia > diasEnMes) {
-                    // Días fuera del mes actual
                     final mesAnterior = semana == 0 && numeroDia < 1;
-                    final mesSiguiente = numeroDia > diasEnMes;
                     
                     int diaAMostrar;
                     if (mesAnterior) {
-                      final ultimoDiaMesAnterior = DateTime(_mesActual.year, _mesActual.month, 0).day;
+                      final ultimoDiaMesAnterior = DateTime(mesActual.year, mesActual.month, 0).day;
                       diaAMostrar = ultimoDiaMesAnterior + numeroDia;
                     } else {
                       diaAMostrar = numeroDia - diasEnMes;
@@ -163,12 +145,12 @@ class _CalendarioRegistrosState extends State<CalendarioRegistros> {
                     );
                   }
 
-                  final diaActual = DateTime(_mesActual.year, _mesActual.month, numeroDia);
+                  final diaActual = DateTime(mesActual.year, mesActual.month, numeroDia);
                   final tieneRegistro = _tieneRegistro(diaActual);
 
                   return GestureDetector(
                     onTap: tieneRegistro
-                        ? () => widget.onDiaSeleccionado?.call(diaActual)
+                        ? () => onDiaSeleccionado?.call(diaActual)
                         : null,
                     child: Container(
                       width: 32,

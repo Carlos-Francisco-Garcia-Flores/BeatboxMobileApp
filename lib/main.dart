@@ -131,6 +131,23 @@ void main() async {
             );
           },
         ),
+
+        // --- 📊 HISTORIAL (para mostrar todos los registros del usuario) ---
+        ChangeNotifierProxyProvider<AuthViewModel, HistorialViewModel>(
+          create: (_) {
+            final historialApi = HistorialApiService(baseUrl: baseUrl, token: '');
+            final historialRepo = HistorialRepositoryImpl(historialApi);
+            final usecase = ObtenerHistorial(historialRepo);
+            return HistorialViewModel(usecase);
+          },
+          update: (_, auth, __) {
+            final token = auth.user?.token ?? '';
+            final historialApi = HistorialApiService(baseUrl: baseUrl, token: token);
+            final historialRepo = HistorialRepositoryImpl(historialApi);
+            final usecase = ObtenerHistorial(historialRepo);
+            return HistorialViewModel(usecase);
+          },
+        ),
       ],
       child: const MyApp(), // ✅ Todo el árbol de rutas está bajo los providers
     ),

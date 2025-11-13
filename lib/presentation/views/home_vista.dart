@@ -194,7 +194,7 @@ class _HomeVistaState extends State<HomeVista> {
           colorIcono: ColoresApp.naranja,
         ),
         TarjetaMetrica(
-          valor: proyeccion > 0 ? '$proyeccion sem' : '—',
+          valor: proyeccion > 0 ? '$proyeccion meses' : '—',
           etiqueta: 'Tiempo Estimado',
           icono: Icons.access_time,
           colorIcono: ColoresApp.naranja,

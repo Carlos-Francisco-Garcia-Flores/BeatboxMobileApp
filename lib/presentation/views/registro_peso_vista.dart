@@ -52,7 +52,6 @@ class _RegistroPesoVistaState extends State<RegistroPesoVista> {
             altura = perfil.altura?.toDouble() ?? 0.0;
             pesoInicial = perfil.pesoInicial?.toDouble() ?? 0.0;
             pesoObjetivo = perfil.pesoObjetivo?.toDouble() ?? 0.0;
-            imc = perfil.imc?.toDouble() ?? 0.0;
             
             // Calcular edad desde fecha de nacimiento
             if (perfil.fechaNacimiento != null) {
@@ -93,7 +92,7 @@ void didChangeDependencies() {
 
     // 2️⃣ Cuando ya exista el perfil, cargar el último peso
     if (perfilVM.perfil != null) {
-      await pesoVM.cargarUltimoPeso(perfilVM.perfil!.id);
+      await pesoVM.cargarPesosPorPerfil(perfilVM.perfil!.id);
       debugPrint("✅ Último peso cargado correctamente (${pesoVM.ultimoRegistro?.peso})");
 
       // 3️⃣ Refrescar la interfaz solo si está montada
@@ -172,9 +171,17 @@ void didChangeDependencies() {
           duration: Duration(seconds: 2),
         ),
       );
+
       _pesoController.clear();
-      
-      // Actualizar la UI para mostrar el nuevo registro
+
+      // ⭐ Recargar el último peso después de registrar
+      await pesoVM.cargarPesosPorPerfil(perfilId);
+
+      // ⭐ Actualizar el IMC de la sección "Datos Actuales"
+      if (pesoVM.ultimoRegistro != null) {
+        imc = pesoVM.ultimoRegistro!.imc;
+      }
+
       setState(() {});
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -238,7 +245,7 @@ void didChangeDependencies() {
                             const SizedBox(height: 24),
                           ],
                           
-                          _buildDatosActualesSection(theme),
+                          _buildDatosActualesSection(theme, pesoVM),
                           const SizedBox(height: 16),
                           _buildTipInformativo(theme),
                           const SizedBox(height: 80),
@@ -539,7 +546,7 @@ void didChangeDependencies() {
     );
   }
 
-  Widget _buildDatosActualesSection(ThemeData theme) {
+  Widget _buildDatosActualesSection(ThemeData theme, PesoViewModel pesoVM){
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -638,10 +645,10 @@ void didChangeDependencies() {
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    if (imc > 0) ...[
+                    if (pesoVM.ultimoRegistro != null) ...[
                       const SizedBox(height: 4),
                       Text(
-                        'IMC ${imc.toStringAsFixed(1)}',
+                        'IMC ${pesoVM.ultimoRegistro!.imc.toStringAsFixed(1)}',
                         style: TextStyle(
                           fontSize: 14,
                           color: theme.textTheme.bodyMedium?.color,

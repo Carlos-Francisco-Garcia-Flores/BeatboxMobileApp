@@ -33,6 +33,52 @@ class _ProgresoVistaState extends State<ProgresoVista> {
     return null;
   }
 
+  // ⭐ FILTRAR: ÚLTIMO REGISTRO DE CADA MES
+  List<Map<String, dynamic>> _filtrarUltimoRegistroPorMes(List historial) {
+    final Map<String, Map<String, dynamic>> registrosPorMes = {};
+
+    for (var registro in historial) {
+      final fecha = DateTime.parse(registro["fecha"]);
+      final key = "${fecha.year}-${fecha.month.toString().padLeft(2, '0')}";
+
+      if (!registrosPorMes.containsKey(key)) {
+        registrosPorMes[key] = registro;
+      } else {
+        final fechaActual = DateTime.parse(registrosPorMes[key]!["fecha"]);
+        if (fecha.isAfter(fechaActual)) {
+          registrosPorMes[key] = registro;
+        }
+      }
+    }
+
+    final lista = registrosPorMes.values.toList();
+
+    lista.sort((a, b) {
+      final fa = DateTime.parse(a["fecha"]);
+      final fb = DateTime.parse(b["fecha"]);
+      return fa.compareTo(fb);
+    });
+
+    return lista;
+  }
+
+  // ⭐ FILTRAR: ÚLTIMOS 30 DÍAS
+  List<Map<String, dynamic>> _filtrarRegistrosUltimoMes(List historial) {
+  if (historial.isEmpty) return [];
+
+  final ultimaFecha = DateTime.parse(historial.last["fecha"]);
+  final limite = ultimaFecha.subtract(const Duration(days: 30));
+
+  return historial
+      .where((registro) {
+        final fecha = DateTime.parse(registro["fecha"]);
+        return fecha.isAfter(limite) || fecha.isAtSameMomentAs(limite);
+      })
+      .map<Map<String, dynamic>>((registro) => Map<String, dynamic>.from(registro))
+      .toList();
+}
+
+
   @override
   void initState() {
     super.initState();
@@ -47,12 +93,28 @@ class _ProgresoVistaState extends State<ProgresoVista> {
 
       if (idPerfil.isNotEmpty) {
         await progresoVM.cargarProgreso(idPerfil);
-      } else {
-        debugPrint('⚠️ No se encontró idPerfil');
       }
     } catch (e) {
       debugPrint('❌ Error al cargar progreso: $e');
     }
+  }
+
+  // ⭐ SECCIÓN PARA AGRUPAR GRÁFICOS
+  Widget _buildSectionGrafico({
+    required String title,
+    required String subtitle,
+    required Widget Function(BuildContext) builder,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+        const SizedBox(height: 12),
+        Builder(builder: builder),
+      ],
+    );
   }
 
   @override
@@ -61,18 +123,16 @@ class _ProgresoVistaState extends State<ProgresoVista> {
     final vm = context.watch<ProgresoViewModel>();
     final perfilVM = context.watch<PerfilViewModel>();
 
-    // === 🔹 Datos combinados ===
     final double pesoInicial = (perfilVM.perfil?.pesoInicial ?? vm.progreso?.pesoInicial ?? 0).toDouble();
     final double pesoObjetivo = (perfilVM.perfil?.pesoObjetivo ?? vm.progreso?.pesoObjetivo ?? pesoInicial).toDouble();
     final double pesoActual = (vm.progreso?.pesoActual ?? 0).toDouble();
 
-    // Cálculos adicionales
     final double perdidoTotal = (pesoInicial - pesoActual);
     final double restante = (pesoActual - pesoObjetivo).abs();
 
-    // Porcentaje de avance
     double _avance() {
       if (pesoInicial == pesoObjetivo) return 1.0;
+
       double pct;
       if (pesoInicial > pesoObjetivo) {
         pct = (pesoInicial - pesoActual) / (pesoInicial - pesoObjetivo);
@@ -85,31 +145,22 @@ class _ProgresoVistaState extends State<ProgresoVista> {
     final double avance = _avance();
 
     final historial = vm.progreso?.historial ?? [];
-    final int totalRegistros = historial.length;
-    
-    // Calcular meses activos y promedios
+    final totalRegistros = historial.length;
+
     int mesesActivos = 0;
     double perdidaPorMes = 0.0;
     double promedioDiario = 0.0;
-    
+
     if (totalRegistros >= 2) {
-      final primerRegistro = historial.first;
-      final ultimoRegistro = historial.last;
-      
-      final fechaPrimera = _parseFecha(primerRegistro['fecha']);
-      final fechaUltima = _parseFecha(ultimoRegistro['fecha']);
-      
+      final fechaPrimera = _parseFecha(historial.first['fecha']);
+      final fechaUltima = _parseFecha(historial.last['fecha']);
+
       if (fechaPrimera != null && fechaUltima != null) {
-        final diferenciaDias = fechaUltima.difference(fechaPrimera).inDays;
-        mesesActivos = (diferenciaDias / 30).round();
-        
-        if (mesesActivos > 0) {
-          perdidaPorMes = perdidoTotal / mesesActivos;
-        }
-        
-        if (diferenciaDias > 0) {
-          promedioDiario = perdidoTotal / diferenciaDias;
-        }
+        final dias = fechaUltima.difference(fechaPrimera).inDays;
+        mesesActivos = (dias / 30).round();
+
+        if (mesesActivos > 0) perdidaPorMes = perdidoTotal / mesesActivos;
+        if (dias > 0) promedioDiario = perdidoTotal / dias;
       }
     }
 
@@ -132,7 +183,7 @@ class _ProgresoVistaState extends State<ProgresoVista> {
                               _buildEncabezado(theme),
                               const SizedBox(height: 20),
 
-                              // === Tarjetas dinámicas ===
+                              // TARJETAS
                               GridView.count(
                                 shrinkWrap: true,
                                 physics: const NeverScrollableScrollPhysics(),
@@ -164,17 +215,36 @@ class _ProgresoVistaState extends State<ProgresoVista> {
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 16),
 
-                              // === Resumen mejorado ===
-                              _buildResumen(perdidoTotal, mesesActivos, theme),
                               const SizedBox(height: 20),
+                              _buildResumen(perdidoTotal, mesesActivos, theme),
 
-                              // === Gráfico de evolución ===
-                              GraficoEvolucion(datos: vm.progreso!.historial),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 24),
 
-                              // === Tabs ===
+                              // ⭐ GRÁFICO DIARIO
+                              _buildSectionGrafico(
+                                title: 'Evolución Diaria (Últimos 30 días)',
+                                subtitle: 'Cada registro del mes',
+                                builder: (_) {
+                                  final datos = _filtrarRegistrosUltimoMes(vm.progreso!.historial);
+                                  return GraficoEvolucion(datos: datos);
+                                },
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              // ⭐ GRÁFICO MENSUAL
+                              _buildSectionGrafico(
+                                title: 'Progreso Mensual',
+                                subtitle: 'Último registro de cada mes',
+                                builder: (_) {
+                                  final datos = _filtrarUltimoRegistroPorMes(vm.progreso!.historial);
+                                  return GraficoEvolucion(datos: datos);
+                                },
+                              ),
+
+                              const SizedBox(height: 24),
+
                               Row(
                                 children: [
                                   _buildTab('Peso', 0, theme),
@@ -184,6 +254,7 @@ class _ProgresoVistaState extends State<ProgresoVista> {
                                   _buildTab('Estadísticas', 2, theme),
                                 ],
                               ),
+
                               const SizedBox(height: 16),
 
                               if (_tabSeleccionada == 0)
@@ -199,10 +270,8 @@ class _ProgresoVistaState extends State<ProgresoVista> {
                                   mesesActivos: mesesActivos,
                                 ),
 
-                              if (_tabSeleccionada == 1)
-                                _buildTabIMC(theme, vm),
-                              if (_tabSeleccionada == 2)
-                                _buildTabEstadisticas(theme, vm),
+                              if (_tabSeleccionada == 1) _buildTabIMC(theme, vm),
+                              if (_tabSeleccionada == 2) _buildTabEstadisticas(theme, vm),
                             ],
                           ),
                         ),
@@ -215,8 +284,9 @@ class _ProgresoVistaState extends State<ProgresoVista> {
       ),
     );
   }
-
-  // Encabezado
+  // =========================
+  // ENCABEZADO
+  // =========================
   Widget _buildEncabezado(ThemeData theme) {
     return Row(
       children: [
@@ -248,19 +318,25 @@ class _ProgresoVistaState extends State<ProgresoVista> {
     );
   }
 
+  // =========================
+  // RESUMEN SUPERIOR
+  // =========================
   Widget _buildResumen(double perdidoTotal, int mesesActivos, ThemeData theme) {
     String textoResumen;
     String textoSecundario;
-    
+
     if (perdidoTotal > 0) {
       if (mesesActivos > 0) {
-        textoResumen = '¡Excelente! Has perdido ${perdidoTotal.toStringAsFixed(1)} kg en $mesesActivos ${mesesActivos == 1 ? "mes" : "meses"}';
+        textoResumen =
+            '¡Excelente! Has perdido ${perdidoTotal.toStringAsFixed(1)} kg en $mesesActivos ${mesesActivos == 1 ? "mes" : "meses"}';
       } else {
-        textoResumen = '¡Excelente! Has perdido ${perdidoTotal.toStringAsFixed(1)} kg';
+        textoResumen =
+            '¡Excelente! Has perdido ${perdidoTotal.toStringAsFixed(1)} kg';
       }
       textoSecundario = 'vs primer registro';
     } else if (perdidoTotal < 0) {
-      textoResumen = 'Has ganado ${perdidoTotal.abs().toStringAsFixed(1)} kg';
+      textoResumen =
+          'Has ganado ${perdidoTotal.abs().toStringAsFixed(1)} kg';
       textoSecundario = 'vs primer registro';
     } else {
       textoResumen = 'Sin cambios en tu peso';
@@ -324,7 +400,9 @@ class _ProgresoVistaState extends State<ProgresoVista> {
     );
   }
 
-  // Tabs
+  // =========================
+  // TABS SUPERIORES (Peso / IMC / Estadísticas)
+  // =========================
   Widget _buildTab(String titulo, int indice, ThemeData theme) {
     final esSeleccionada = _tabSeleccionada == indice;
     return Expanded(
@@ -349,14 +427,17 @@ class _ProgresoVistaState extends State<ProgresoVista> {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: esSeleccionada ? Colors.white : theme.textTheme.bodyLarge?.color,
+              color:
+                  esSeleccionada ? Colors.white : theme.textTheme.bodyLarge?.color,
             ),
           ),
         ),
       ),
     );
   }
-
+  // =========================
+  // TAB: PESO
+  // =========================
   Widget _buildTabPeso(
     ThemeData theme, {
     required double pesoInicial,
@@ -373,6 +454,7 @@ class _ProgresoVistaState extends State<ProgresoVista> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // --- TARJETA 1 ---
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -398,12 +480,20 @@ class _ProgresoVistaState extends State<ProgresoVista> {
                 ),
               ),
               const SizedBox(height: 16),
-              _buildFilaMeta('Peso Inicial', kg(pesoInicial), theme.textTheme.bodyLarge?.color ?? Colors.black, theme),
+
+              _buildFilaMeta('Peso Inicial', kg(pesoInicial),
+                  theme.textTheme.bodyLarge?.color ?? Colors.black, theme),
               const SizedBox(height: 8),
-              _buildFilaMeta('Peso Actual', kg(pesoActual), ColoresApp.naranja, theme),
+
+              _buildFilaMeta('Peso Actual', kg(pesoActual), ColoresApp.naranja,
+                  theme),
               const SizedBox(height: 8),
-              _buildFilaMeta('Peso Meta', kg(pesoObjetivo), theme.textTheme.bodyLarge?.color ?? Colors.black, theme),
+
+              _buildFilaMeta('Peso Meta', kg(pesoObjetivo),
+                  theme.textTheme.bodyLarge?.color ?? Colors.black, theme),
               const SizedBox(height: 16),
+
+              // --- BARRA DE PROGRESO ---
               Stack(
                 children: [
                   Container(
@@ -433,6 +523,7 @@ class _ProgresoVistaState extends State<ProgresoVista> {
                 ],
               ),
               const SizedBox(height: 8),
+
               Text(
                 '${kg(restante)} restantes para tu objetivo',
                 style: TextStyle(
@@ -443,8 +534,10 @@ class _ProgresoVistaState extends State<ProgresoVista> {
             ],
           ),
         ),
+
         const SizedBox(height: 16),
 
+        // --- TARJETA 2 ---
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -470,11 +563,29 @@ class _ProgresoVistaState extends State<ProgresoVista> {
                 ),
               ),
               const SizedBox(height: 16),
-              _buildFilaRitmo('Por Mes', '${perdidaPorMes.toStringAsFixed(1)} kg/mes', ColoresApp.naranja, theme),
+
+              _buildFilaRitmo(
+                'Por Mes',
+                '${perdidaPorMes.toStringAsFixed(1)} kg/mes',
+                ColoresApp.naranja,
+                theme,
+              ),
               const SizedBox(height: 8),
-              _buildFilaRitmo('Promedio Diario', '${promedioDiario.toStringAsFixed(2)} kg/día', Colors.blue, theme),
+
+              _buildFilaRitmo(
+                'Promedio Diario',
+                '${promedioDiario.toStringAsFixed(2)} kg/día',
+                Colors.blue,
+                theme,
+              ),
               const SizedBox(height: 8),
-              _buildFilaRitmo('Tiempo Activo', '$mesesActivos ${mesesActivos == 1 ? "mes" : "meses"}', null, theme),
+
+              _buildFilaRitmo(
+                'Tiempo Activo',
+                '$mesesActivos ${mesesActivos == 1 ? "mes" : "meses"}',
+                null,
+                theme,
+              ),
             ],
           ),
         ),
@@ -482,8 +593,12 @@ class _ProgresoVistaState extends State<ProgresoVista> {
     );
   }
 
+  // =========================
+  // TAB: IMC
+  // =========================
   Widget _buildTabIMC(ThemeData theme, ProgresoViewModel vm) {
     final imc = vm.progreso!.imcActual?.toStringAsFixed(1) ?? '0.0';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -512,8 +627,12 @@ class _ProgresoVistaState extends State<ProgresoVista> {
     );
   }
 
+  // =========================
+  // TAB: ESTADÍSTICAS
+  // =========================
   Widget _buildTabEstadisticas(ThemeData theme, ProgresoViewModel vm) {
     final historial = vm.progreso!.historial;
+
     final pesos = historial.map((e) => e['peso'] as double).toList();
     final pesoMin = pesos.isNotEmpty ? pesos.reduce((a, b) => a < b ? a : b) : 0;
     final pesoMax = pesos.isNotEmpty ? pesos.reduce((a, b) => a > b ? a : b) : 0;
@@ -521,6 +640,7 @@ class _ProgresoVistaState extends State<ProgresoVista> {
 
     return Column(
       children: [
+        // --- TARJETA 1 ---
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -546,17 +666,44 @@ class _ProgresoVistaState extends State<ProgresoVista> {
                 ),
               ),
               const SizedBox(height: 16),
-              _buildFilaEstadistica('Total de Registros', '${historial.length}', theme.textTheme.bodyLarge?.color ?? Colors.black, theme),
+
+              _buildFilaEstadistica(
+                'Total de Registros',
+                '${historial.length}',
+                theme.textTheme.bodyLarge?.color ?? Colors.black,
+                theme,
+              ),
               const Divider(height: 24),
-              _buildFilaEstadistica('Peso Mínimo', '${pesoMin.toStringAsFixed(1)} kg', ColoresApp.exito, theme),
+
+              _buildFilaEstadistica(
+                'Peso Mínimo',
+                '${pesoMin.toStringAsFixed(1)} kg',
+                ColoresApp.exito,
+                theme,
+              ),
               const Divider(height: 24),
-              _buildFilaEstadistica('Peso Máximo', '${pesoMax.toStringAsFixed(1)} kg', ColoresApp.error, theme),
+
+              _buildFilaEstadistica(
+                'Peso Máximo',
+                '${pesoMax.toStringAsFixed(1)} kg',
+                ColoresApp.error,
+                theme,
+              ),
               const Divider(height: 24),
-              _buildFilaEstadistica('Diferencia Total', '${diferencia.toStringAsFixed(1)} kg', ColoresApp.naranja, theme),
+
+              _buildFilaEstadistica(
+                'Diferencia Total',
+                '${diferencia.toStringAsFixed(1)} kg',
+                ColoresApp.naranja,
+                theme,
+              ),
             ],
           ),
         ),
+
         const SizedBox(height: 16),
+
+        // --- TARJETA 2 ---
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -582,6 +729,7 @@ class _ProgresoVistaState extends State<ProgresoVista> {
                 ),
               ),
               const SizedBox(height: 16),
+
               Center(
                 child: Text(
                   'Proyección de peso futuro\n(Próximamente)',
@@ -597,8 +745,11 @@ class _ProgresoVistaState extends State<ProgresoVista> {
       ],
     );
   }
-
-  Widget _buildFilaMeta(String etiqueta, String valor, Color colorValor, ThemeData theme) {
+  // =========================
+  // FILA: META / PESO
+  // =========================
+  Widget _buildFilaMeta(
+      String etiqueta, String valor, Color colorValor, ThemeData theme) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -621,7 +772,11 @@ class _ProgresoVistaState extends State<ProgresoVista> {
     );
   }
 
-  Widget _buildFilaRitmo(String etiqueta, String valor, Color? colorBadge, ThemeData theme) {
+  // =========================
+  // FILA: RITMO / PROMEDIOS
+  // =========================
+  Widget _buildFilaRitmo(
+      String etiqueta, String valor, Color? colorBadge, ThemeData theme) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -632,6 +787,8 @@ class _ProgresoVistaState extends State<ProgresoVista> {
             color: theme.textTheme.bodyMedium?.color,
           ),
         ),
+
+        // Si tiene color de badge (resaltado)
         if (colorBadge != null)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -661,7 +818,11 @@ class _ProgresoVistaState extends State<ProgresoVista> {
     );
   }
 
-  Widget _buildFilaEstadistica(String etiqueta, String valor, Color colorValor, ThemeData theme) {
+  // =========================
+  // FILA: ESTADÍSTICAS GENERALES
+  // =========================
+  Widget _buildFilaEstadistica(
+      String etiqueta, String valor, Color colorValor, ThemeData theme) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -683,4 +844,4 @@ class _ProgresoVistaState extends State<ProgresoVista> {
       ],
     );
   }
-}
+} // 👈 ESTE ES EL ÚNICO CIERRE FINAL DE LA CLASE _ProgresoVistaState

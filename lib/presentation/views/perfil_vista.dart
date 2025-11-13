@@ -7,6 +7,7 @@ import '../widgets/header_app.dart';
 import '../widgets/barra_navegacion_inferior.dart';
 import '../widgets/opcion_configuracion.dart';
 import '../../presentation/viewmodels/auth_viewmodel.dart';
+import '../../presentation/viewmodels/peso_viewmodel.dart';
 import '../../data/datasources/remote/perfil_api_service.dart';
 import '../../data/repositories/perfil_repository_impl.dart';
 import '../../presentation/viewmodels/perfil_viewmodel.dart';
@@ -14,7 +15,7 @@ import '../../presentation/viewmodels/perfil_viewmodel.dart';
 /// Vista de perfil de usuario con datos del backend
 class PerfilVista extends StatefulWidget {
   final ProveedorTema proveedorTema;
-  
+
   const PerfilVista({
     super.key,
     required this.proveedorTema,
@@ -28,11 +29,10 @@ class _PerfilVistaState extends State<PerfilVista> {
   // Estado de notificaciones
   bool _recordatoriosSemanales = true;
   bool _mensajesMotivacionales = false;
-  
-  // Estado de carga y datos del backend
-  late PerfilViewModel _perfilViewModel;
+
+  // Estado de carga
   bool _isLoading = true;
-  
+
   // Datos del perfil
   String nombre = '';
   String email = '';
@@ -42,89 +42,88 @@ class _PerfilVistaState extends State<PerfilVista> {
   double pesoInicial = 0.0;
   double pesoObjetivo = 0.0;
   int edad = 0;
-  // <CHANGE> Usar IMC del backend en lugar de calcularlo
+
+  // Datos REALES desde PesoViewModel
   double imc = 0.0;
-  String categoriaIMC = '';
+  double pesoActual = 0.0;
   int registrosTotales = 0;
   double metaKg = 0.0;
+  String categoriaIMC = '';
+
+  late PerfilViewModel _perfilViewModel;
 
   @override
   void initState() {
     super.initState();
-    _cargarPerfilUsuario();
+    _cargarDatosCompletos();
   }
 
-  Future<void> _cargarPerfilUsuario() async {
-    final auth = context.read<AuthViewModel>();
-    if (auth.user == null) {
-      debugPrint('⚠️ Usuario no logueado');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+  Future<void> _cargarDatosCompletos() async {
+    final authVM = context.read<AuthViewModel>();
+    final pesoVM = context.read<PesoViewModel>();
+
+    if (authVM.user == null) {
+      debugPrint("⚠ No hay usuario logueado");
+      setState(() => _isLoading = false);
       return;
     }
 
-    const baseUrl = 'http://10.0.2.2:3000'; // 🔧 Ajusta la URL de tu backend
-    final api = PerfilApiService(baseUrl: baseUrl, token: auth.user!.token!);
+    // ========== Cargar PERFIL desde backend ==========
+    const baseUrl = "http://10.0.2.2:3000";
+    final api = PerfilApiService(baseUrl: baseUrl, token: authVM.user!.token!);
     final repo = PerfilRepositoryImpl(api);
     _perfilViewModel = PerfilViewModel(repo);
+    await _perfilViewModel.cargarPerfil(authVM.user!.id);
 
-    await _perfilViewModel.cargarPerfil(auth.user!.id);
+    final perfil = _perfilViewModel.perfil;
 
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        if (_perfilViewModel.perfil != null) {
-          final perfil = _perfilViewModel.perfil!;
-          
-          // Asignar datos del perfil
-          nombre = perfil.nombre;
-          email = perfil.email ?? '';
-          telefono = perfil.telefono;
-          genero = perfil.genero;
-          altura = perfil.altura?.toDouble() ?? 0.0;
-          pesoInicial = perfil.pesoInicial?.toDouble() ?? 0.0;
-          pesoObjetivo = perfil.pesoObjetivo?.toDouble() ?? 0.0;
-          // 🧮 Calcular edad según la fecha de nacimiento
-          if (perfil.fechaNacimiento != null) {
-            final hoy = DateTime.now();
-            edad = hoy.year - perfil.fechaNacimiento!.year;
-
-            // Ajuste si aún no ha cumplido años este año
-            if (hoy.month < perfil.fechaNacimiento!.month ||
-                (hoy.month == perfil.fechaNacimiento!.month &&
-                    hoy.day < perfil.fechaNacimiento!.day)) {
-              edad--;
-            }
-          } else {
-            edad = 0;
-          }
-
-          
-          // <CHANGE> Obtener IMC directamente del backend
-          imc = perfil.imc?.toDouble() ?? 0.0;
-          
-          // Determinar categoría de IMC basado en el valor del backend
-          if (imc > 0) {
-            if (imc < 18.5) {
-              categoriaIMC = 'Bajo peso';
-            } else if (imc < 25) {
-              categoriaIMC = 'Normal';
-            } else if (imc < 30) {
-              categoriaIMC = 'Sobrepeso';
-            } else {
-              categoriaIMC = 'Obesidad';
-            }
-          }
-          
-          // Calcular meta en kg (diferencia entre peso inicial y objetivo)
-          metaKg = (pesoInicial - pesoObjetivo).abs();
-          
-          // Aquí podrías obtener registrosTotales de otra API si está disponible
-          registrosTotales = 5; // Valor por defecto
-        }
-      });
+    if (perfil == null) {
+      setState(() => _isLoading = false);
+      return;
     }
+
+    // Datos del perfil
+    nombre = perfil.nombre;
+    email = perfil.email ?? "";
+    telefono = perfil.telefono;
+    genero = perfil.genero;
+    altura = perfil.altura?.toDouble() ?? 0.0;
+    pesoInicial = perfil.pesoInicial?.toDouble() ?? 0.0;
+    pesoObjetivo = perfil.pesoObjetivo?.toDouble() ?? 0.0;
+
+    // Calcular edad
+    if (perfil.fechaNacimiento != null) {
+      final hoy = DateTime.now();
+      edad = hoy.year - perfil.fechaNacimiento!.year;
+
+      if (hoy.month < perfil.fechaNacimiento!.month ||
+          (hoy.month == perfil.fechaNacimiento!.month &&
+              hoy.day < perfil.fechaNacimiento!.day)) {
+        edad--;
+      }
+    }
+
+    // ========== Cargar PESOS desde PesoViewModel ==========
+    await pesoVM.cargarUltimoPeso(perfil.id);
+    await pesoVM.cargarPesosPorPerfil(perfil.id);
+
+    final ultimo = pesoVM.ultimoRegistro;
+
+    // IMC, peso actual y registros REALES
+    pesoActual = ultimo?.peso ?? pesoInicial;
+    imc = ultimo?.imc ?? 0.0;
+    registrosTotales = pesoVM.totalRegistros;
+
+    // Meta: cuánto FALTA por bajar
+    metaKg = (pesoActual - pesoObjetivo).abs();
+
+    // Categoría del IMC
+    if (imc < 18.5) categoriaIMC = "Bajo peso";
+    else if (imc < 25) categoriaIMC = "Normal";
+    else if (imc < 30) categoriaIMC = "Sobrepeso";
+    else categoriaIMC = "Obesidad";
+
+    setState(() => _isLoading = false);
   }
 
   @override
@@ -134,7 +133,7 @@ class _PerfilVistaState extends State<PerfilVista> {
     final colorTarjeta = modoOscuro ? ColoresApp.fondoTarjetaOscuro : Colors.white;
     final colorTexto = modoOscuro ? ColoresApp.textoPrincipalOscuro : ColoresApp.textoPrincipal;
     final colorTextoSecundario = modoOscuro ? ColoresApp.textoSecundarioOscuro : ColoresApp.textoSecundario;
-    
+
     return Scaffold(
       backgroundColor: colorFondo,
       body: SafeArea(
@@ -144,9 +143,7 @@ class _PerfilVistaState extends State<PerfilVista> {
             Expanded(
               child: _isLoading
                   ? Center(
-                      child: CircularProgressIndicator(
-                        color: ColoresApp.naranja,
-                      ),
+                      child: CircularProgressIndicator(color: ColoresApp.naranja),
                     )
                   : SingleChildScrollView(
                       padding: const EdgeInsets.all(16),
@@ -155,11 +152,7 @@ class _PerfilVistaState extends State<PerfilVista> {
                         children: [
                           Row(
                             children: [
-                              Icon(
-                                Icons.person_outline,
-                                color: ColoresApp.naranja,
-                                size: 28,
-                              ),
+                              Icon(Icons.person_outline, color: ColoresApp.naranja, size: 28),
                               const SizedBox(width: 8),
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -183,10 +176,12 @@ class _PerfilVistaState extends State<PerfilVista> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 24),
 
+                          const SizedBox(height: 24),
                           _buildSeccionTitulo('Información Personal', colorTexto),
                           const SizedBox(height: 12),
+
+                          // TARJETA DE INFORMACIÓN PERSONAL
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -195,6 +190,7 @@ class _PerfilVistaState extends State<PerfilVista> {
                             ),
                             child: Column(
                               children: [
+                                // Nombre + Email
                                 Row(
                                   children: [
                                     Container(
@@ -206,7 +202,7 @@ class _PerfilVistaState extends State<PerfilVista> {
                                       ),
                                       child: Center(
                                         child: Text(
-                                          nombre.isNotEmpty 
+                                          nombre.isNotEmpty
                                               ? nombre.substring(0, nombre.length >= 2 ? 2 : 1).toUpperCase()
                                               : 'U',
                                           style: const TextStyle(
@@ -223,7 +219,7 @@ class _PerfilVistaState extends State<PerfilVista> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            nombre.isNotEmpty ? nombre : 'Usuario',
+                                            nombre,
                                             style: TextStyle(
                                               fontSize: 16,
                                               fontWeight: FontWeight.w600,
@@ -233,20 +229,13 @@ class _PerfilVistaState extends State<PerfilVista> {
                                           const SizedBox(height: 4),
                                           Row(
                                             children: [
-                                              Icon(
-                                                Icons.email_outlined,
-                                                size: 14,
-                                                color: colorTextoSecundario,
-                                              ),
+                                              Icon(Icons.email_outlined, size: 14, color: colorTextoSecundario),
                                               const SizedBox(width: 4),
                                               Expanded(
                                                 child: Text(
-                                                  email.isNotEmpty ? email : 'Sin email',
-                                                  style: TextStyle(
-                                                    fontSize: 13,
-                                                    color: colorTextoSecundario,
-                                                  ),
+                                                  email,
                                                   overflow: TextOverflow.ellipsis,
+                                                  style: TextStyle(fontSize: 13, color: colorTextoSecundario),
                                                 ),
                                               ),
                                             ],
@@ -256,53 +245,49 @@ class _PerfilVistaState extends State<PerfilVista> {
                                     ),
                                   ],
                                 ),
+
                                 const SizedBox(height: 20),
-                                
                                 Row(
                                   children: [
                                     Expanded(
                                       child: _buildInfoItem(
-                                        'Peso Inicial', 
-                                        pesoInicial > 0 ? '${pesoInicial.toStringAsFixed(1)} kg' : '-',
-                                        colorTextoSecundario, 
-                                        colorTexto
-                                      ),
+                                          'Peso Inicial',
+                                          '${pesoInicial.toStringAsFixed(1)} kg',
+                                          colorTextoSecundario,
+                                          colorTexto),
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: _buildInfoItem(
-                                        'Altura', 
-                                        altura > 0 ? '${altura.toStringAsFixed(0)} cm' : '-',
-                                        colorTextoSecundario, 
-                                        colorTexto
-                                      ),
+                                          'Altura',
+                                          '${altura.toStringAsFixed(0)} cm',
+                                          colorTextoSecundario,
+                                          colorTexto),
                                     ),
                                   ],
                                 ),
+
                                 const SizedBox(height: 12),
                                 Row(
                                   children: [
                                     Expanded(
                                       child: _buildInfoItem(
-                                        'Peso Objetivo', 
-                                        pesoObjetivo > 0 ? '${pesoObjetivo.toStringAsFixed(0)} kg' : '-',
-                                        colorTextoSecundario, 
-                                        colorTexto
-                                      ),
+                                          'Peso Objetivo',
+                                          '${pesoObjetivo.toStringAsFixed(1)} kg',
+                                          colorTextoSecundario,
+                                          colorTexto),
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
-                                      child: _buildInfoItem(
-                                        'Edad', 
-                                        edad > 0 ? '$edad años' : '-',
-                                        colorTextoSecundario, 
-                                        colorTexto
-                                      ),
+                                      child:
+                                          _buildInfoItem('Edad', '$edad años', colorTextoSecundario, colorTexto),
                                     ),
                                   ],
                                 ),
+
                                 const SizedBox(height: 16),
-                                
+
+                                // ========= IMC ACTUAL REAL =========
                                 if (imc > 0)
                                   Container(
                                     padding: const EdgeInsets.all(16),
@@ -316,13 +301,9 @@ class _PerfilVistaState extends State<PerfilVista> {
                                         Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text(
-                                              'IMC Actual',
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                color: ColoresApp.textoSecundario,
-                                              ),
-                                            ),
+                                            Text('IMC Actual',
+                                                style: TextStyle(
+                                                    fontSize: 13, color: ColoresApp.textoSecundario)),
                                             const SizedBox(height: 4),
                                             Text(
                                               imc.toStringAsFixed(1),
@@ -335,10 +316,7 @@ class _PerfilVistaState extends State<PerfilVista> {
                                           ],
                                         ),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 6,
-                                          ),
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                           decoration: BoxDecoration(
                                             color: _getColorCategoria(categoriaIMC),
                                             borderRadius: BorderRadius.circular(6),
@@ -354,14 +332,17 @@ class _PerfilVistaState extends State<PerfilVista> {
                                         ),
                                       ],
                                     ),
-                                  ),
+                                  )
                               ],
                             ),
                           ),
+
                           const SizedBox(height: 24),
 
+                          // ======== NOTIFICACIONES ========
                           _buildSeccionTitulo('Notificaciones', colorTexto),
                           const SizedBox(height: 12),
+
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -375,31 +356,28 @@ class _PerfilVistaState extends State<PerfilVista> {
                                   titulo: 'Recordatorios Semanales',
                                   subtitulo: 'Recibe recordatorios para registrar tu peso',
                                   valor: _recordatoriosSemanales,
-                                  onCambiado: (valor) {
-                                    setState(() {
-                                      _recordatoriosSemanales = valor;
-                                    });
-                                  },
+                                  onCambiado: (v) => setState(() => _recordatoriosSemanales = v),
                                 ),
+
                                 Divider(color: modoOscuro ? ColoresApp.fondoDivisorOscuro : ColoresApp.fondoDivisor),
+
                                 OpcionConfiguracion(
                                   icono: Icons.message_outlined,
                                   titulo: 'Mensajes Motivacionales',
                                   subtitulo: 'Recibe frases inspiradoras diariamente',
                                   valor: _mensajesMotivacionales,
-                                  onCambiado: (valor) {
-                                    setState(() {
-                                      _mensajesMotivacionales = valor;
-                                    });
-                                  },
+                                  onCambiado: (v) => setState(() => _mensajesMotivacionales = v),
                                 ),
                               ],
                             ),
                           ),
+
                           const SizedBox(height: 24),
 
+                          // ======== CONFIGURACIONES ========
                           _buildSeccionTitulo('Configuraciones', colorTexto),
                           const SizedBox(height: 12),
+
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -413,44 +391,39 @@ class _PerfilVistaState extends State<PerfilVista> {
                                   titulo: 'Modo Oscuro',
                                   subtitulo: 'Cambia entre tema claro y oscuro',
                                   valor: modoOscuro,
-                                  onCambiado: (valor) {
-                                    widget.proveedorTema.cambiarTema(valor);
-                                  },
+                                  onCambiado: (v) => widget.proveedorTema.cambiarTema(v),
                                 ),
+
                                 Divider(color: modoOscuro ? ColoresApp.fondoDivisorOscuro : ColoresApp.fondoDivisor),
+
                                 OpcionConfiguracion(
                                   icono: Icons.lock_outline,
                                   titulo: 'Privacidad',
                                   subtitulo: 'Tus datos se almacenan localmente',
                                   valor: true,
                                   accionPersonalizada: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 4,
-                                    ),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                     decoration: BoxDecoration(
                                       color: ColoresApp.exito.withOpacity(0.1),
-                                      border: Border.all(
-                                        color: ColoresApp.exito,
-                                        width: 1.5,
-                                      ),
+                                      border: Border.all(color: ColoresApp.exito, width: 1.5),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: const Text(
                                       'Seguro',
                                       style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: ColoresApp.exito,
-                                      ),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: ColoresApp.exito),
                                     ),
                                   ),
                                 ),
                               ],
                             ),
                           ),
+
                           const SizedBox(height: 24),
 
+                          // ======== ESTADÍSTICAS RÁPIDAS ========
                           Container(
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
@@ -459,12 +432,9 @@ class _PerfilVistaState extends State<PerfilVista> {
                             ),
                             child: Row(
                               children: [
-                                Icon(
-                                  Icons.show_chart,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
+                                Icon(Icons.show_chart, color: Colors.white, size: 28),
                                 const SizedBox(width: 16),
+
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -478,6 +448,7 @@ class _PerfilVistaState extends State<PerfilVista> {
                                         ),
                                       ),
                                       const SizedBox(height: 8),
+
                                       Row(
                                         children: [
                                           Expanded(
@@ -532,14 +503,14 @@ class _PerfilVistaState extends State<PerfilVista> {
                               ],
                             ),
                           ),
+
                           const SizedBox(height: 16),
 
+                          // ======== CERRAR SESIÓN ========
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed: () {
-                                _mostrarDialogoCerrarSesion(context);
-                              },
+                              onPressed: () => _mostrarDialogoCerrarSesion(context),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: ColoresApp.error,
                                 foregroundColor: Colors.white,
@@ -565,6 +536,7 @@ class _PerfilVistaState extends State<PerfilVista> {
                               ),
                             ),
                           ),
+
                           const SizedBox(height: 16),
                         ],
                       ),
@@ -573,20 +545,18 @@ class _PerfilVistaState extends State<PerfilVista> {
           ],
         ),
       ),
-      bottomNavigationBar: const BarraNavegacionInferior(
-        rutaActual: Rutas.perfil,
-      ),
+      bottomNavigationBar: const BarraNavegacionInferior(rutaActual: Rutas.perfil),
     );
   }
+
+  // =========================================================
+  // ======================    HELPERS    =====================
+  // =========================================================
 
   Widget _buildSeccionTitulo(String titulo, Color colorTexto) {
     return Row(
       children: [
-        Icon(
-          Icons.person_outline,
-          color: ColoresApp.naranja,
-          size: 20,
-        ),
+        Icon(Icons.person_outline, color: ColoresApp.naranja, size: 20),
         const SizedBox(width: 8),
         Text(
           titulo,
@@ -604,22 +574,10 @@ class _PerfilVistaState extends State<PerfilVista> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: colorSecundario,
-          ),
-        ),
+        Text(label, style: TextStyle(fontSize: 12, color: colorSecundario)),
         const SizedBox(height: 4),
-        Text(
-          valor,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: colorPrincipal,
-          ),
-        ),
+        Text(valor,
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: colorPrincipal)),
       ],
     );
   }
@@ -659,9 +617,7 @@ class _PerfilVistaState extends State<PerfilVista> {
                 (route) => false,
               );
             },
-            style: TextButton.styleFrom(
-              foregroundColor: ColoresApp.error,
-            ),
+            style: TextButton.styleFrom(foregroundColor: ColoresApp.error),
             child: const Text('Cerrar Sesión'),
           ),
         ],
